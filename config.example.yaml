@@ -1,0 +1,75 @@
+# Copy this to config.yaml and fill in real values directly -- this one
+# file is everything the app (and the Docker container) needs. No env
+# vars, no .env file, nothing else to set.
+#
+# (If you'd rather not put passwords in this file -- e.g. you're
+# committing it somewhere -- values can also be written as ${VAR_NAME}
+# to pull from an environment variable at load time instead. Entirely
+# optional; plain values below are the simpler default.)
+
+log_level: INFO
+
+netbox:
+  url: "https://netbox.example.com"
+  token: "your-netbox-api-token"
+  # true = verify against public/system CAs (will fail with a self-signed
+  # cert, which most internal NetBox instances use); false = skip
+  # verification (warnings about this are suppressed automatically);
+  # or a string path to a CA bundle file, e.g. "/app/config/netbox-ca.pem",
+  # to verify properly against your internal CA instead of disabling
+  # verification -- mount the cert file alongside config.yaml if you use this.
+  verify_tls: false
+  # every object this tool creates/updates gets this tag, so you can
+  # always find (or bulk-clean) exactly what it owns
+  managed_tag: brocade-sync
+
+sync:
+  dry_run: false
+  create_interfaces: true
+  create_cables: true
+  # what to do when one switch port has several logged-in WWNs (NPIV)
+  # and Brocade's own name-server data can't tell us which is "the
+  # real" physical one either: "first" cables to whichever WWN the
+  # switch itself listed first; "skip" leaves it uncabled and just warns.
+  ambiguous_wwn_strategy: first
+  prune_missing_interfaces: false
+
+switches:
+  # --- old test switch, SSH is your only option ---
+  - name: SW-TEST-01
+    host: 10.10.10.11
+    username: admin
+    password: your-switch-password
+    method: ssh
+    # optional -- just a plain NetBox Tag applied to this switch's
+    # Device and Interfaces, for grouping/filtering in the UI. No
+    # plugin, no special object type -- delete this line if you don't
+    # want it.
+    fabric_tag: Fabric-Test-A
+    site: Lab
+    device_role: SAN Switch
+    ssh_port: 22
+    # some old firmware only tolerates one exec channel per TCP session;
+    # flip this on if you see connection resets after the first command
+    ssh_new_session_per_command: false
+
+  # --- new switch, REST works fine ---
+  - name: SW-PROD-01
+    host: 10.20.20.11
+    username: admin
+    password: your-switch-password
+    method: rest
+    fabric_tag: Fabric-Prod-A
+    site: DC1
+    device_role: SAN Switch
+    rest_port: 443
+    rest_verify_tls: false   # most switches run a self-signed cert out of the box
+
+  # you can mix ssh/rest freely, add as many switches as you like
+  # - name: SW-PROD-02
+  #   host: 10.20.20.12
+  #   username: admin
+  #   password: your-switch-password
+  #   method: rest
+  #   fabric_tag: Fabric-Prod-A
+  #   site: DC1
