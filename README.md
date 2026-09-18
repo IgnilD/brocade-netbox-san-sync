@@ -20,10 +20,10 @@ config:
 1. **Switch identity** -- connects (SSH or REST), reads model, serial,
    firmware, domain ID, and management IP; creates/updates the chassis
    as a NetBox `dcim.Device`:
-   - **Model** is resolved from switchshow's `switchType` (e.g. `66.1`)
+   - **Model** is resolved from switchshow's `switchType`
      against Brocade's own published switchType-to-product-name table
-     (not the raw part number, which is accurate but not human-friendly
-     -- e.g. `40-1000133-14` vs. `Brocade 5100`). Falls back to the raw
+     (not the raw part number, which is accurate but not human-friendly`).
+     Falls back to the raw
      `chassisshow` part number for any switchType not in the table, so
      an unrecognized/very new switch still gets a sensible device type.
    - **Serial number** comes from `chassisshow`'s `Serial Num` field,
