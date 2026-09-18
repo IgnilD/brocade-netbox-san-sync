@@ -26,5 +26,6 @@ def build_client(switch: SwitchConfig) -> BrocadeClient:
             verify_tls=switch.rest_verify_tls,
             timeout=switch.timeout,
             port=switch.rest_port,
+            use_tls=switch.rest_use_tls,
         )
     raise ValueError(f"Unknown method '{switch.method}' for switch '{switch.name}' (use 'ssh' or 'rest')")

@@ -5,19 +5,30 @@ Only usable on FOS 8.2.1 and later (Brocade added the REST API then;
 your 7.4.2c test switch does NOT have it -- use the SSH backend for
 that one. Your 9.1.1b production switch supports this fully).
 
+FOS's REST API is normally HTTPS-only, so that's the default here
+(`rest_use_tls: true`). If your switch is only reachable through
+something that terminates TLS elsewhere and forwards plain HTTP
+(a reverse proxy, jump host, etc. -- not a native FOS behavior, but a
+real thing some network setups do), set `rest_use_tls: false` in that
+switch's config; forcing HTTPS against a plain-HTTP listener fails with
+an SSL "record layer failure", not a helpful error.
+
 Uses the standard FOS REST session flow:
     POST /rest/login          (HTTP Basic auth) -> Authorization header
     GET  /rest/running/...    (with that Authorization header)
     POST /rest/logout
 
-Resource module names below (brocade-fibrechannel-switch,
-brocade-interface, brocade-name-server, brocade-media, brocade-chassis)
-are FOS's standard YANG module names and have been stable since 8.2.1,
-but FOS does add/rename leaf fields between minor releases occasionally.
-If a field comes back missing on your switch, GET the resource once with
-`--dump-raw` (see main.py) and check the exact field names your FOS
-build uses -- most are unchanged for years, but it's worth a sanity
-check on first run against a new switch.
+Resource paths and field names below were verified against Broadcom's
+own published FOS 9.2.x REST API Reference Manual
+(techdocs.broadcom.com/.../fabric-os-rest-api/9-2-x/...), not guessed --
+an earlier version of this file guessed several field names wrong (most
+importantly, missed that every GET response is wrapped in a top-level
+"Response" object, which alone made every field extraction silently
+return nothing). If a field still comes back missing on your switch,
+GET the resource once with `--dump-raw` (see main.py) and compare
+against that manual -- FOS does rename/deprecate leaf fields between
+releases (the interface fields below already carry old-name fallbacks
+for exactly this reason).
 """
 from __future__ import annotations
 
@@ -52,11 +63,6 @@ _STATE_MAP = {
     "faulty": PortState.FAULTY,
 }
 
-# FOS REST reports port-type as an integer enum in some releases and a
-# string in others; this covers the common string form. Adjust if your
-# switch returns integers (0=unknown,7=E-Port,15=F-Port,16=FL-Port, etc
-# per the brocade-interface yang model) -- add an int branch in
-# _map_port_type if you hit that on your build.
 _PORTTYPE_MAP = {
     "f-port": PortType.F_PORT,
     "fl-port": PortType.FL_PORT,
@@ -75,6 +81,27 @@ def _map_port_type(raw: Any) -> PortType:
     return _PORTTYPE_MAP.get(str(raw).strip().lower(), PortType.UNKNOWN)
 
 
+def _first_present(row: dict, *keys: str):
+    """Returns the value of the first key present in `row`, or None.
+    Used throughout below because FOS REST has renamed several leaf
+    fields across versions (e.g. `enabled-state` -> `is-enabled-state`)
+    -- trying the current name first, then falling back to older names,
+    covers more FOS versions than hardcoding one."""
+    for key in keys:
+        if key in row and row[key] is not None:
+            return row[key]
+    return None
+
+
+def _parse_protocol_speed(raw: Optional[str]) -> Optional[float]:
+    """protocol-speed is a string like "16-gfc" or "32-gfc" -- extract
+    the leading number as Gbps."""
+    if not raw:
+        return None
+    digits = "".join(ch for ch in str(raw).split("-")[0] if ch.isdigit())
+    return float(digits) if digits else None
+
+
 class BrocadeRESTClient(BrocadeClient):
     def __init__(
         self,
@@ -84,6 +111,7 @@ class BrocadeRESTClient(BrocadeClient):
         verify_tls: bool = False,
         timeout: int = 20,
         port: int = 443,
+        use_tls: bool = True,
     ) -> None:
         self.host = host
         self.username = username
@@ -91,9 +119,20 @@ class BrocadeRESTClient(BrocadeClient):
         self.verify_tls = verify_tls
         self.timeout = timeout
         self.port = port
-        self.base_url = f"https://{host}:{port}/rest"
+        self.use_tls = use_tls
+        scheme = "https" if use_tls else "http"
+        self.base_url = f"{scheme}://{host}:{port}/rest"
         self._session = requests.Session()
         self._auth_token: Optional[str] = None
+
+        if port == 80 and use_tls:
+            log.warning(
+                "REST config for %s uses port 80 with TLS still enabled (rest_use_tls defaults to "
+                "true) -- port 80 is conventionally plain HTTP, and this combination will likely "
+                "fail with an SSL 'record layer failure'. If this switch is only reachable over "
+                "plain HTTP, set `rest_use_tls: false` for it.",
+                host,
+            )
 
         if not verify_tls:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -134,18 +173,35 @@ class BrocadeRESTClient(BrocadeClient):
         self._session.close()
 
     def _get(self, resource: str) -> dict:
+        """GETs one REST resource and returns its content, already
+        unwrapped from FOS's top-level "Response" envelope -- EVERY FOS
+        REST GET response is wrapped like
+        `{"Response": {"<resource-name>": ...}}`, confirmed against
+        Broadcom's own documented examples. Missing this wrapper was the
+        single biggest bug in an earlier version of this client: every
+        field lookup silently found nothing, because it was looking one
+        level too shallow.
+        """
         url = f"{self.base_url}/running/{resource}"
         resp = self._session.get(url, verify=self.verify_tls, timeout=self.timeout)
         if resp.status_code == 404:
             log.warning("REST resource not found on %s: %s", self.host, resource)
             return {}
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return data.get("Response", data)
 
     def dump_raw(self, resource: str) -> dict:
         """Exposed for `main.py --dump-raw`, to inspect exact JSON shape
-        for tuning the field extraction below against your FOS build."""
-        return self._get(resource)
+        for tuning the field extraction below against your FOS build.
+        Returns the raw response including the "Response" wrapper, so
+        what you see here matches Broadcom's own documented examples
+        exactly (unlike the already-unwrapped data `_get` returns
+        internally)."""
+        url = f"{self.base_url}/running/{resource}"
+        resp = self._session.get(url, verify=self.verify_tls, timeout=self.timeout)
+        resp.raise_for_status()
+        return resp.json()
 
     # -- top level ---------------------------------------------------------
 
@@ -163,9 +219,8 @@ class BrocadeRESTClient(BrocadeClient):
         rows = data.get("fibrechannel-switch", [])
         row = rows[0] if rows else {}
 
-        chassis = self._get("brocade-chassis/chassis")
-        model = chassis.get("chassis", {}).get("product-name")
-        serial = chassis.get("chassis", {}).get("serial-number")
+        chassis_data = self._get("brocade-chassis/chassis")
+        chassis = chassis_data.get("chassis", {})
 
         domain = row.get("domain-id")
         return SwitchInfo(
@@ -173,8 +228,9 @@ class BrocadeRESTClient(BrocadeClient):
             wwn=row.get("name", ""),  # brocade-fibrechannel-switch "name" leaf IS the switch WWN
             domain_id=int(domain) if domain is not None else None,
             fabric_name=row.get("fabric-user-friendly-name"),
-            model=model,
-            serial_number=serial,
+            model=row.get("model") or chassis.get("product-name"),
+            part_number=chassis.get("part-number"),
+            serial_number=chassis.get("serial-number"),
             firmware=row.get("firmware-version"),
             ip_address=self.host,
         )
@@ -191,8 +247,13 @@ class BrocadeRESTClient(BrocadeClient):
             except (TypeError, ValueError):
                 index = len(ports)
 
-            speed_bps = row.get("speed")
-            speed_gbps = float(speed_bps) / 1_000_000_000 if speed_bps else None
+            speed_gbps = _parse_protocol_speed(row.get("protocol-speed"))
+
+            enabled_raw = _first_present(row, "is-enabled-state", "enabled-state")
+            port_type_raw = _first_present(row, "port-type-string", "port-type")
+            npiv_raw = _first_present(row, "npiv-enabled-v2", "npiv-enabled")
+            trunk_raw = _first_present(row, "trunk-port-enabled-v2", "trunk-port-enabled", "is-trunk-port")
+            long_dist_raw = _first_present(row, "long-distance-string", "long-distance")
 
             ports.append(
                 PortInfo(
@@ -202,13 +263,13 @@ class BrocadeRESTClient(BrocadeClient):
                     name=f"port{index}",
                     wwn=row.get("wwn"),
                     state=_STATE_MAP.get(str(row.get("physical-state", "")).lower(), PortState.UNKNOWN),
-                    port_type=_map_port_type(row.get("port-type")),
-                    enabled=row.get("enabled-state") == 1 or row.get("enabled-state") is True,
+                    port_type=_map_port_type(port_type_raw),
+                    enabled=bool(enabled_raw) if enabled_raw is not None else True,
                     speed_gbps=speed_gbps,
                     max_speed_gbps=None,
-                    npiv_enabled=bool(row.get("npiv-enabled")),
-                    long_distance=bool(row.get("long-distance")),
-                    trunked=bool(row.get("is-trunk-port") or row.get("trunk-port-role")),
+                    npiv_enabled=bool(npiv_raw),
+                    long_distance=bool(long_dist_raw),
+                    trunked=bool(trunk_raw),
                     description=row.get("user-friendly-name"),
                 )
             )
@@ -223,8 +284,6 @@ class BrocadeRESTClient(BrocadeClient):
 
         rows = data.get("media-rdp", [])
         ports_by_name = {p.name: p for p in ports}
-        # media-rdp entries are keyed by the same "name" (slot/port) as
-        # brocade-interface/fibrechannel; re-derive our normalized name.
         ports_by_index = {p.index: p for p in ports}
         for row in rows:
             name = row.get("name", "")
@@ -251,18 +310,26 @@ class BrocadeRESTClient(BrocadeClient):
         rows = data.get("fibrechannel-name-server", [])
         entries: list[NameServerEntry] = []
         for row in rows:
+            port_index = row.get("port-index")
             entries.append(
                 NameServerEntry(
                     port_id=str(row.get("port-id", "")),
                     port_name=row.get("port-name", ""),
                     node_name=row.get("node-name"),
-                    # "physical-port-name" is FOS REST's field for what
-                    # the SSH CLI calls "Fabric Port Name" -- the local
-                    # switch port's own WWN this device logged in through.
-                    fabric_port_name=row.get("physical-port-name"),
-                    device_type="NPIV" if row.get("npiv") else None,
+                    # the local switch port's own WWN this device logged
+                    # in through -- "fabric-port-name", confirmed against
+                    # Broadcom's documented example response (an earlier
+                    # version of this file used the wrong field name here)
+                    fabric_port_name=row.get("fabric-port-name"),
+                    # for an NPIV entry, the physical WWN it rides on
+                    permanent_port_name=row.get("permanent-port-name"),
+                    port_index=int(port_index) if port_index is not None else None,
+                    # raw string like "Physical Initiator", "NPIV Target"
+                    # -- same convention as the SSH CLI's "Device type:",
+                    # not a boolean (an earlier version of this file
+                    # looked for a nonexistent "npiv" boolean field)
+                    device_type=row.get("name-server-device-type"),
                     symbolic_name=row.get("port-symbolic-name"),
-                    share_area=bool(row.get("share-area")) if "share-area" in row else None,
                 )
             )
         return entries

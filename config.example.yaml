@@ -35,7 +35,7 @@ sync:
   prune_missing_interfaces: false
 
 switches:
-  # --- old test switch, SSH is your only option ---
+  # --- old test switch: FOS 7.4.2c has no REST API, SSH is your only option ---
   - name: SW-TEST-01
     host: 10.10.10.11
     username: admin
@@ -53,7 +53,7 @@ switches:
     # flip this on if you see connection resets after the first command
     ssh_new_session_per_command: false
 
-  # --- new switch, REST works fine ---
+  # --- new prod switch: FOS 9.1.1b, REST works fine ---
   - name: SW-PROD-01
     host: 10.20.20.11
     username: admin
@@ -64,6 +64,11 @@ switches:
     device_role: SAN Switch
     rest_port: 443
     rest_verify_tls: false   # most switches run a self-signed cert out of the box
+    # rest_use_tls: true is the default (FOS REST is normally HTTPS-only).
+    # Only set this false if this switch is reachable exclusively over
+    # plain HTTP (e.g. behind something that terminates TLS separately) --
+    # leaving it true against a plain-HTTP port fails with an SSL error.
+    # rest_use_tls: false
 
   # you can mix ssh/rest freely, add as many switches as you like
   # - name: SW-PROD-02

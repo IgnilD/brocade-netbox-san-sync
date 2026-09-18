@@ -22,15 +22,15 @@ config:
    as a NetBox `dcim.Device`:
    - **Model** is resolved from switchshow's `switchType`
      against Brocade's own published switchType-to-product-name table
-     (not the raw part number, which is accurate but not human-friendly`).
-     Falls back to the raw
+     (not the raw part number, which is accurate but not human-friendly).
+      Falls back to the raw
      `chassisshow` part number for any switchType not in the table, so
      an unrecognized/very new switch still gets a sensible device type.
    - **Serial number** comes from `chassisshow`'s `Serial Num` field,
      written to the Device's own `serial` field (not the Device Type --
      serial is per-unit, so it won't appear on the Device Type page).
-   - **Platform** is created/assigned as `Brocade Fabric OS <version>`
-     (e.g. "Brocade Fabric OS 7.4.2c"), from `version`'s `Fabric OS:` line.
+   - **Platform** is created/assigned as `Brocade Fabric OS <version>`,
+      from `version`'s `Fabric OS:` line.
    - **Primary IPv4** comes from `ipaddrshow`'s `Ethernet IP Address` /
      `Ethernet Subnetmask`, assigned to a `mgmt0` management-only
      Interface and set as the Device's primary IPv4. On a director-class
@@ -140,12 +140,18 @@ python main.py --config config.yaml --switch SW-PROD-01 --dump-raw brocade-name-
 If a field comes back empty that you expected to see populated, that's
 almost always a field-name or regex mismatch for your specific firmware
 -- fix it in `app/brocade/ssh_client.py` or `app/brocade/rest_client.py`
-and add a matching case to `tests/test_ssh_parsers.py` so it stays fixed.
-The current SSH parsers and their tests are already grounded in real
-`switchshow`/`nsshow -t` output from an actual switch (a Brocade
-6510-class unit, FOS-era switchType 66.1), not invented samples -- the
-REST path is the one part still resting on documented-but-unverified
-field names, since it hasn't been run against a live 8.2.1+ switch yet.
+and add a matching case to `tests/test_ssh_parsers.py` /
+`tests/test_rest_parsers.py` so it stays fixed. Both the SSH and REST
+parsers are grounded in real data now: SSH against actual switch output
+(a Brocade 5100, switchType 66.1), REST against Broadcom's own
+documented example responses (FOS 9.2.x REST API Reference Manual) --
+including one important, previously-invisible detail those examples
+caught: every FOS REST response is wrapped in a top-level `"Response"`
+object, which the client unwraps automatically now. Field names still
+drift a little release to release (a few `brocade-interface/fibrechannel`
+fields have both a current and a deprecated name, e.g.
+`is-enabled-state` vs. `enabled-state`); the REST client tries the
+current name first and falls back to the older one.
 
 ## Project layout
 
@@ -170,7 +176,8 @@ app/
 main.py                       # CLI: --dry-run / --interval / --dump-raw / --switch
 config.example.yaml
 Dockerfile / docker-compose.yml / .env.example
-tests/test_ssh_parsers.py     # parser regression tests, run with `pytest`
+tests/test_ssh_parsers.py     # SSH parser regression tests, run with `pytest`
+tests/test_rest_parsers.py    # REST parser regression tests
 ```
 
 ## Requirements

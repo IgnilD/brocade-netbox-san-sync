@@ -56,6 +56,7 @@ class SwitchConfig:
 
     rest_port: int = 443
     rest_verify_tls: bool = False
+    rest_use_tls: bool = True
 
 
 @dataclass
@@ -127,6 +128,7 @@ def load_config(path: str | Path) -> AppConfig:
                 ssh_new_session_per_command=sw.get("ssh_new_session_per_command", False),
                 rest_port=sw.get("rest_port", 443),
                 rest_verify_tls=sw.get("rest_verify_tls", False),
+                rest_use_tls=sw.get("rest_use_tls", True),
             )
         )
 
