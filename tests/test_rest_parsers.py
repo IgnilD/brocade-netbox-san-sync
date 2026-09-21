@@ -159,16 +159,21 @@ def test_rest_interface_falls_back_to_older_field_names():
     assert p.npiv_enabled is True
 
 
-# brocade-chassis/chassis and brocade-fibrechannel-switch/fibrechannel-switch
+# brocade-chassis/chassis and brocade-fibrechannel-switch/fibrechannel-switch.
+# Values here match a real report: REST's "model" field is NOT a
+# friendly name, it's the same raw switchType-style value the SSH CLI's
+# switchshow reports (e.g. "162.5" for a G620) -- an earlier version of
+# this client used it as-is instead of resolving it through the same
+# lookup table the SSH path already used.
 SWITCH_INFO_RESPONSE = {
     "Response": {
         "fibrechannel-switch": [
             {
                 "name": "10:00:00:05:33:88:72:30",
-                "domain-id": 6,
-                "user-friendly-name": "f1sw1",
-                "model": "5100",
-                "firmware-version": "9.1.1b",
+                "domain-id": 1,
+                "user-friendly-name": "f1sw1-test",
+                "model": "162.5",
+                "firmware-version": "v9.1.1b",
                 "fabric-user-friendly-name": "Fabric-Prod-A",
             }
         ]
@@ -178,27 +183,47 @@ CHASSIS_RESPONSE = {
     "Response": {
         "chassis": {
             "chassis-wwn": "10:00:00:05:33:88:72:30",
-            "product-name": "5100",
-            "part-number": "40-1000133-14",
-            "serial-number": "ALM2533G03M",
+            "product-name": "162.5",
+            "part-number": "80-1010119-01",
+            "serial-number": "EWY1948Q00P",
         }
+    }
+}
+MGMT_INTERFACE_RESPONSE = {
+    "Response": {
+        "management-ethernet-interface": [
+            {
+                "cp-name": "CP0",
+                "interface-name": "eth0",
+                "inet-address": "10.18.3.22",
+                "subnet-mask": "255.255.255.0",
+            }
+        ]
     }
 }
 
 
-def test_rest_switch_info_unwraps_both_resources():
+def test_rest_switch_info_resolves_friendly_model_and_unwraps_all_resources():
     client = _client()
     client._session = MagicMock()
     client._session.get.side_effect = [
         _mock_get_response(SWITCH_INFO_RESPONSE),
         _mock_get_response(CHASSIS_RESPONSE),
+        _mock_get_response(MGMT_INTERFACE_RESPONSE),
     ]
 
     info = client._get_switch_info()
 
-    assert info.name == "f1sw1"
-    assert info.domain_id == 6
-    assert info.firmware == "9.1.1b"
-    assert info.serial_number == "ALM2533G03M"
-    assert info.part_number == "40-1000133-14"
+    assert info.name == "f1sw1-test"
+    assert info.domain_id == 1
+    assert info.firmware == "v9.1.1b"
+    assert info.serial_number == "EWY1948Q00P"
     assert info.fabric_name == "Fabric-Prod-A"
+    assert info.mgmt_ip == "10.18.3.22"
+    assert info.mgmt_prefix_len == 24
+    # the actual point of this test: REST's raw "162.5" resolves to a
+    # real product name via the same table the SSH path uses, instead
+    # of being used as-is
+    assert info.switch_type == "162.5"
+    assert info.model == "Brocade G620"
+    assert info.part_number == "80-1010119-01"

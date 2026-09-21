@@ -20,17 +20,17 @@ config:
 1. **Switch identity** -- connects (SSH or REST), reads model, serial,
    firmware, domain ID, and management IP; creates/updates the chassis
    as a NetBox `dcim.Device`:
-   - **Model** is resolved from switchshow's `switchType`
+   - **Model** is resolved from switchshow's `switchType` (e.g. `66.1`)
      against Brocade's own published switchType-to-product-name table
-     (not the raw part number, which is accurate but not human-friendly).
-      Falls back to the raw
+     (not the raw part number, which is accurate but not human-friendly). 
+     Falls back to the raw
      `chassisshow` part number for any switchType not in the table, so
      an unrecognized/very new switch still gets a sensible device type.
    - **Serial number** comes from `chassisshow`'s `Serial Num` field,
      written to the Device's own `serial` field (not the Device Type --
      serial is per-unit, so it won't appear on the Device Type page).
-   - **Platform** is created/assigned as `Brocade Fabric OS <version>`,
-      from `version`'s `Fabric OS:` line.
+   - **Platform** is created/assigned as `Brocade Fabric OS <version>`, 
+     from `version`'s `Fabric OS:` line.
    - **Primary IPv4** comes from `ipaddrshow`'s `Ethernet IP Address` /
      `Ethernet Subnetmask`, assigned to a `mgmt0` management-only
      Interface and set as the Device's primary IPv4. On a director-class
@@ -120,6 +120,30 @@ docker compose up -d   # runs continuously, --interval 900 (every 15 min) by def
 single source of truth for everything (NetBox URL/token, switch
 credentials, sync options). Nothing else to configure in
 `docker-compose.yml`.
+
+To change how often it syncs, edit the `900` in `docker-compose.yml`'s
+`command:` line (seconds) and re-run `docker compose up -d` -- no
+rebuild needed, that's just the container's startup command.
+
+### Running without docker compose
+
+If you'd rather trigger it yourself (e.g. from `crontab`) instead of
+using the built-in `--interval` loop:
+
+```bash
+docker build -t brocade-netbox-san-sync .
+```
+
+Then, in `crontab -e` (runs every 15 minutes here, adjust to taste):
+
+```
+*/15 * * * * docker run --rm -v /path/to/config.yaml:/app/config/config.yaml:ro brocade-netbox-san-sync --config /app/config/config.yaml >> /var/log/brocade-sync.log 2>&1
+```
+
+Use the absolute path to your real `config.yaml` on the host in the
+`-v` mount. The container exits after one pass (no `--interval` flag),
+with a non-zero exit code if any switch failed -- useful if your cron
+setup can alert on that.
 
 ## Before your first real run against a new switch
 

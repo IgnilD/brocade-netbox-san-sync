@@ -48,6 +48,8 @@ from app.brocade.models import (
     SwitchInfo,
     SwitchSnapshot,
 )
+from app.brocade.switch_type_lookup import model_for_switch_type
+from app.utils.network import netmask_to_prefixlen
 
 log = logging.getLogger(__name__)
 
@@ -223,17 +225,57 @@ class BrocadeRESTClient(BrocadeClient):
         chassis = chassis_data.get("chassis", {})
 
         domain = row.get("domain-id")
+        mgmt_ip, mgmt_prefix_len = self._get_mgmt_ip()
+
+        # `model` here is NOT a friendly name -- it's the same raw
+        # switchType value the SSH CLI's switchshow reports (e.g.
+        # "162.5"), confirmed against real REST output. Resolve it
+        # through the same lookup table the SSH path uses; fall back to
+        # chassis's product-name (also sometimes just the bare model
+        # number, but occasionally friendlier) or the raw part number.
+        raw_switch_type = row.get("model")
+        friendly_model = (
+            model_for_switch_type(raw_switch_type)
+            or chassis.get("product-name")
+            or chassis.get("part-number")
+            or "Unknown Brocade Switch"
+        )
+
         return SwitchInfo(
             name=row.get("user-friendly-name") or row.get("name") or self.host,
             wwn=row.get("name", ""),  # brocade-fibrechannel-switch "name" leaf IS the switch WWN
             domain_id=int(domain) if domain is not None else None,
             fabric_name=row.get("fabric-user-friendly-name"),
-            model=row.get("model") or chassis.get("product-name"),
+            model=friendly_model,
+            switch_type=raw_switch_type,
             part_number=chassis.get("part-number"),
             serial_number=chassis.get("serial-number"),
             firmware=row.get("firmware-version"),
             ip_address=self.host,
+            mgmt_ip=mgmt_ip,
+            mgmt_prefix_len=mgmt_prefix_len,
         )
+
+    def _get_mgmt_ip(self) -> tuple[Optional[str], Optional[int]]:
+        """The REST equivalent of `ipaddrshow` -- `brocade-chassis/management-ethernet-interface`
+        (a list keyed by CP name + interface name; a fixed-port switch
+        like a 5100 has exactly one entry, a director-class chassis with
+        dual CPs has one per CP). Takes the first entry's `inet-address`/
+        `subnet-mask`, same best-effort "first listed" behavior as the
+        SSH path -- see the equivalent note on `_parse_ipaddrshow`."""
+        try:
+            data = self._get("brocade-chassis/management-ethernet-interface")
+        except requests.RequestException as exc:
+            log.warning("brocade-chassis/management-ethernet-interface unavailable on %s: %s", self.host, exc)
+            return None, None
+
+        rows = data.get("management-ethernet-interface", [])
+        if not rows:
+            return None, None
+        row = rows[0]
+        ip = row.get("inet-address")
+        prefix_len = netmask_to_prefixlen(row.get("subnet-mask"))
+        return ip, prefix_len
 
     def _get_ports(self) -> list[PortInfo]:
         data = self._get("brocade-interface/fibrechannel")

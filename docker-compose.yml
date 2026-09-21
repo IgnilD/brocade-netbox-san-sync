@@ -9,9 +9,16 @@ services:
       # host/user/password, all of it. This is the only thing the
       # container needs; nothing else to configure here.
       - ./config.yaml:/app/config/config.yaml:ro
+    # 900 = sync every 15 minutes; change the number (in seconds) to
+    # whatever cadence you want, then `docker compose up -d` again to
+    # apply it (no rebuild needed -- this is just the container's
+    # startup command, not baked into the image).
     command: ["--config", "/app/config/config.yaml", "--interval", "900"]
 
     # For a one-shot run (e.g. from an external cron/scheduler) instead
     # of the built-in --interval loop, override command:
     #   command: ["--config", "/app/config/config.yaml"]
     # and run with `docker compose run --rm brocade-netbox-san-sync`.
+    # If you'd rather not use docker compose at all (e.g. triggering
+    # from crontab directly with `docker run`), see the README's
+    # "Running without docker compose" section.

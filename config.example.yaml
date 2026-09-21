@@ -35,7 +35,6 @@ sync:
   prune_missing_interfaces: false
 
 switches:
-  # --- old test switch: FOS 7.4.2c has no REST API, SSH is your only option ---
   - name: SW-TEST-01
     host: 10.10.10.11
     username: admin
@@ -53,7 +52,7 @@ switches:
     # flip this on if you see connection resets after the first command
     ssh_new_session_per_command: false
 
-  # --- new prod switch: FOS 9.1.1b, REST works fine ---
+
   - name: SW-PROD-01
     host: 10.20.20.11
     username: admin
