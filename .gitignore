@@ -1,0 +1,11 @@
+# Your real config.yaml holds plain credentials (NetBox token, switch
+# passwords) by design, for simplicity -- it must never be committed.
+# Only config.example.yaml (no secrets) belongs in git.
+config.yaml
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
