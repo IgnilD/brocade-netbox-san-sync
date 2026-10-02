@@ -1,0 +1,61 @@
+name: Build and publish to Docker Hub
+
+# Triggers:
+#   - push to main            -> builds and pushes the ":latest" tag
+#   - push of a version tag   -> builds and pushes ":1.2.3", ":1.2", ":1", AND updates ":latest"
+#     (tag your releases like `git tag v1.2.3 && git push origin v1.2.3`)
+#   - manual run from the Actions tab (workflow_dispatch) -- handy for
+#     a one-off rebuild without pushing a new commit
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*.*.*"]
+  workflow_dispatch: {}
+
+env:
+  # Change this if you want a different Docker Hub repo name than the
+  # project folder name -- otherwise this needs no editing at all; the
+  # account/namespace comes from the DOCKERHUB_USERNAME secret below.
+  IMAGE_NAME: brocade-netbox-san-sync
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (for multi-arch builds)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Derive image tags/labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
