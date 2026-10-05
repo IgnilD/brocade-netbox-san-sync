@@ -305,7 +305,7 @@ class BrocadeSSHClient(BrocadeClient):
 
     @staticmethod
     def _parse_firmware(text: str) -> Optional[str]:
-        # `version` output includes a line like: "Fabric OS:  v9.1.1b"
+        # `version` output includes a line like: "Fabric OS:  v9.0.1c"
         m = re.search(r"Fabric OS:\s*v?([\w.\-]+)", text)
         return m.group(1) if m else None
 
