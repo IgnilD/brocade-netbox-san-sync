@@ -174,7 +174,7 @@ SWITCH_INFO_RESPONSE = {
                 "domain-id": 1,
                 "user-friendly-name": "sw02",
                 "model": "999.5",
-                "firmware-version": "v9.1.1b",
+                "firmware-version": "v9.0.1c",
                 "fabric-user-friendly-name": "Fabric-Prod-A",
             }
         ]
@@ -218,7 +218,7 @@ def test_rest_switch_info_resolves_friendly_model_and_unwraps_all_resources():
 
     assert info.name == "sw02"
     assert info.domain_id == 1
-    assert info.firmware == "v9.1.1b"
+    assert info.firmware == "v9.0.1c"
     assert info.serial_number == "AAA0000A00A"
     assert info.fabric_name == "Fabric-Prod-A"
     assert info.mgmt_ip == "192.0.2.22"
