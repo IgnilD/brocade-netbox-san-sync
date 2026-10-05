@@ -26,7 +26,7 @@ switchType:\t999.1
 switchState:\tOnline   
 switchMode:\tNative
 switchRole:\tPrincipal
-switchDomain:\t6
+switchDomain:\t3
 switchId:\tfffc06
 switchWwn:\t10:00:00:00:0a:14:1e:01
 zoning:\t\tON (f1_v1)
@@ -99,7 +99,7 @@ def test_parse_switchshow_ports_and_switch_info():
 
     assert switch_info.name == "sw01"
     assert switch_info.wwn == "10:00:00:00:0a:14:1e:01"
-    assert switch_info.domain_id == 6
+    assert switch_info.domain_id == 3
     assert switch_info.switch_type == "999.1"
     # uses a fictional table entry so the test verifies the resolution
     # logic (integer part of switchType -> product name) without tying
