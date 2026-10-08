@@ -1,4 +1,4 @@
-name: Build and publish to Docker Hub
+name: Build and publish Docker image
 
 # Triggers:
 #   - push to main            -> builds and pushes the ":latest" tag
@@ -6,6 +6,14 @@ name: Build and publish to Docker Hub
 #     (tag your releases like `git tag v1.2.3 && git push origin v1.2.3`)
 #   - manual run from the Actions tab (workflow_dispatch) -- handy for
 #     a one-off rebuild without pushing a new commit
+#
+# Publishes to TWO registries from one build:
+#   - Docker Hub        (docker.io/<DOCKERHUB_USERNAME>/<IMAGE_NAME>)
+#   - GitHub Container Registry (ghcr.io/<this-repo's-owner>/<IMAGE_NAME>)
+# GHCR needs no secrets of its own -- it authenticates with the
+# `GITHUB_TOKEN` every workflow run gets automatically, which is why
+# only `permissions: packages: write` is needed for it below, not a
+# third repository secret.
 on:
   push:
     branches: ["main"]
@@ -13,10 +21,13 @@ on:
   workflow_dispatch: {}
 
 env:
-  # Change this if you want a different Docker Hub repo name than the
-  # project folder name -- otherwise this needs no editing at all; the
-  # account/namespace comes from the DOCKERHUB_USERNAME secret below.
+  # Change this if you want a different repo/image name than the
+  # project folder name -- otherwise this needs no editing at all.
   IMAGE_NAME: brocade-netbox-san-sync
+
+permissions:
+  contents: read
+  packages: write   # required for the GITHUB_TOKEN to push to ghcr.io
 
 jobs:
   build-and-push:
@@ -37,11 +48,23 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Derive image tags/labels
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+          # metadata-action lowercases these automatically, so a mixed-
+          # case GitHub username/repo (ghcr.io requires all-lowercase
+          # image references) is handled without any extra steps here.
+          images: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+            ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
