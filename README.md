@@ -244,7 +244,7 @@ editing of the workflow file is needed -- just:
 
 1. **Create the Docker Hub repo** (or let the first push create it
    automatically, if your Docker Hub plan allows that) at
-   `hub.docker.com/r/<your-username>/brocade-netbox-san-sync`.
+   `hub.docker.com/r/ignild/brocade-netbox-san-sync`.
 2. **Create a Docker Hub access token**: Docker Hub -> your avatar ->
    **Account Settings -> Security -> New Access Token**. Give it
    Read/Write scope. Copy it immediately -- it's shown once.
@@ -254,7 +254,7 @@ editing of the workflow file is needed -- just:
    - `DOCKERHUB_TOKEN` -- the access token from step 2 (not your
      Docker Hub password)
 4. **Push to `main`** (or trigger it manually from the Actions tab) --
-   the workflow builds and pushes `<username>/brocade-netbox-san-sync:latest`.
+   the workflow builds and pushes `ignil/brocade-netbox-san-sync:latest`.
 
 To cut a versioned release instead of just `latest`:
 ```bash
