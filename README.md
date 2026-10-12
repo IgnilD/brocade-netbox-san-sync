@@ -267,7 +267,7 @@ it instead of building locally (see the comment above `build: .` in
 that file) -- or on any host, regardless of whether this repo is
 checked out there:
 ```bash
-docker pull yourdockerhubusername/brocade-netbox-san-sync:latest
+docker pull ignild/brocade-netbox-san-sync:latest
 ```
 
 ## Requirements
